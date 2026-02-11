@@ -1,0 +1,4 @@
+.env
+wardrobe.json
+__pycache__/
+*.pyc
