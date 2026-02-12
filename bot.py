@@ -33,27 +33,30 @@ ALL_CATEGORIES = [
 # --- Weather ---
 def get_weather(city: str) -> str:
     try:
-        url = f"https://wttr.in/{urllib.parse.quote(city)}?format=j1"
-        req = urllib.request.Request(url, headers={"User-Agent": "outfit-bot"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        encoded = urllib.parse.quote(city)
+        url = f"https://wttr.in/{encoded}?format=j1"
+        req = urllib.request.Request(url, headers={"User-Agent": "curl/7.68.0", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
         current = data["current_condition"][0]
         temp = current["temp_C"]
         feels = current["FeelsLikeC"]
-        desc = current["lang_es"][0]["value"] if "lang_es" in current and current["lang_es"] else current["weatherDesc"][0]["value"]
+        desc_list = current.get("lang_es", current.get("weatherDesc", [{}]))
+        desc = desc_list[0].get("value", "") if desc_list else ""
         humidity = current["humidity"]
-        forecast_today = data["weather"][0]
-        max_t = forecast_today["maxtempC"]
-        min_t = forecast_today["mintempC"]
-        rain_chance = forecast_today["hourly"][4].get("chanceofrain", "0") if len(forecast_today["hourly"]) > 4 else "0"
+        forecast = data["weather"][0]
+        max_t = forecast["maxtempC"]
+        min_t = forecast["mintempC"]
+        hourly = forecast.get("hourly", [])
+        rain = hourly[4].get("chanceofrain", "0") if len(hourly) > 4 else "0"
         return (
             f"Clima en {city}: {desc}, {temp}°C (sensación {feels}°C), "
             f"min {min_t}°C / max {max_t}°C, humedad {humidity}%, "
-            f"probabilidad de lluvia {rain_chance}%"
+            f"lluvia {rain}%"
         )
     except Exception as e:
         logger.warning(f"Weather error for {city}: {e}")
-        return f"No pude obtener el clima de {city}"
+        return f"(clima no disponible para {city})"
 
 
 # --- Wardrobe Manager ---
@@ -326,7 +329,7 @@ Luego cada día:
 async def get_ai_suggestion(wardrobe: Wardrobe, user_message: str, city_override: str = None) -> str:
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash-preview-05-20",
+        model_name="gemini-2.5-flash",
         system_instruction=SYSTEM_PROMPT
     )
     wardrobe_context = wardrobe.get_context_for_ai()
@@ -754,8 +757,26 @@ def main():
     job_time = time(hour=DAILY_HOUR, minute=DAILY_MINUTE, tzinfo=tz)
     app.job_queue.run_daily(send_daily_outfit, time=job_time)
 
-    print("🤖 Outfit Bot corriendo...")
-    app.run_polling(drop_pending_updates=True)
+    # Webhook mode for Render/cloud, polling for local dev
+    RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")  # Render sets this automatically
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")          # Or set manually
+    PORT = int(os.getenv("PORT", "10000"))
+
+    webhook_base = WEBHOOK_URL or RENDER_URL
+
+    if webhook_base:
+        webhook_full = f"{webhook_base}/webhook"
+        print(f"🤖 Outfit Bot corriendo (webhook: {webhook_full}, port: {PORT})")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path="/webhook",
+            webhook_url=webhook_full,
+            drop_pending_updates=True,
+        )
+    else:
+        print("🤖 Outfit Bot corriendo (polling, modo local)")
+        app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
