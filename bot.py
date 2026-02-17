@@ -279,7 +279,7 @@ async def get_ai_suggestion(user_message: str, city_override: str = None) -> str
     day_info = f"Hoy es {today.strftime('%A %d de %B %Y')}, hora: {today.strftime('%H:%M')}"
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash-preview-05-20",
+        model="gemini-2.5-flash",
         contents=f"""CONTEXTO DEL GUARDARROPA:
 {wardrobe_context}
 
